@@ -103,6 +103,43 @@ both growth and time so a session parked at `critical` does not nag.
 **The successor starts working immediately.** The seed is not a note for you to read; it is
 delivered as the successor's first turn, so the new session picks the work up and continues.
 
+### Archiving does not free memory, and releasing only half-frees it
+
+Archiving is a **visibility** change: the session id joins the archive set, which hides it
+from the sidebar's default view. Its log stays on disk, it stays readable, and unarchiving
+restores its exact position. **Nothing is deleted, and nothing is freed.**
+
+**One rule governs memory: a session is released only once it is archived.** A handoff that
+keeps the source visible — the automatic default — leaves it resident, because you may still
+be looking at it. Anything you archive yourself is picked up by a periodic sweep of the
+archive set, since a manual archive emits no event a plugin can listen for.
+
+Releasing calls `SessionStore.remove(id)`, which runs the store's official detach lifecycle.
+
+**What that does and does not free.** A session is held by two independent registries:
+
+| Registry | What it holds | Can a plugin drop it? |
+| --- | --- | --- |
+| `ctx.sessions` | the session's event tree | **yes** — `sessions.remove(id)` |
+| `ctx.agents` | the agent, which holds the session | **no** |
+
+The agent registry is a plain `Map` with **no public removal**: `agents.enter()` returns the
+detach disposer, but `enter()` is called by the agent loop, not by a plugin, and neither
+`agents.remove` nor `agent.dispose` exists on the public surface. So releasing a session
+removes it from the session store while its agent keeps the tree reachable. The log on disk is
+untouched either way.
+
+Measured, with a real `SessionStore` and a real `AgentRegistry`:
+
+```
+BEFORE release:  sessions.get(id) -> true    agents.get(id) -> true
+AFTER  release:  sessions.get(id) -> false   agents.get(id) -> true
+                 the agent still carries all events
+```
+
+A session whose own agent is still **running** is skipped, because removing it then would race
+its closing events. Switch the sweep off with `monitor.releaseArchived: false`.
+
 ### The memory it carries
 
 The design question is *what to carry*. Four layers, ordered by cost:

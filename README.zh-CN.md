@@ -90,6 +90,40 @@ The source session is archived; it stays readable in the sidebar.
 
 **后继立刻开工。** seed 不是留给你读的便条；它被投递为后继的第一轮输入，所以新会话直接接着干。
 
+### 归档不释放内存，而「释放」只释放了一半
+
+归档是**可见性**变更：会话 id 加入归档集，把它从侧栏默认视图里藏起来。它的日志留在磁盘上、
+仍可阅读、取消归档能恢复原位。**什么都没删，也什么都没释放。**
+
+**内存只有一条规则：会话**归档之后**才会被释放。** 交接时保留源会话可见（自动模式的默认）
+就**不会**释放它 —— 因为你可能还在看着它。你自己在侧栏归档的，由定期扫描归档集接手，因为
+手动归档**不发任何插件能监听的事件**。
+
+释放调用 `SessionStore.remove(id)`，跑 store 官方的 detach 生命周期。
+
+**它释放了什么、没释放什么。** 一个会话被**两个独立注册表**持有：
+
+| 注册表 | 持有什么 | 插件能不能摘 |
+| --- | --- | --- |
+| `ctx.sessions` | 会话的事件树 | **能** —— `sessions.remove(id)` |
+| `ctx.agents` | agent，而 agent 持有会话 | **不能** |
+
+agent 注册表是一个普通 `Map`，**没有任何公开的移除方法**：`agents.enter()` 返回 detach
+disposer，但 `enter()` 是 **agent loop 调的，不是插件**，而且公开面上既没有 `agents.remove`
+也没有 `agent.dispose`。所以释放会把会话从 session store 里摘掉，而它的 agent 仍然让那棵树
+可达。磁盘上的日志两种情况都不动。
+
+用**真实** `SessionStore` 和**真实** `AgentRegistry` 实测：
+
+```
+释放前：  sessions.get(id) -> true    agents.get(id) -> true
+释放后：  sessions.get(id) -> false   agents.get(id) -> true
+          agent 仍然持有全部事件
+```
+
+agent 还在 **running** 的会话会被跳过，因为那时摘会跟它的收尾事件打架。把扫描关掉用
+`monitor.releaseArchived: false`。
+
 ### 它带走的记忆
 
 设计问题是**带什么**。四层，按成本排序：

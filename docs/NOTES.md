@@ -179,6 +179,36 @@ resident, holding 675MB" — which was wrong. The truth was 3 live archived sess
 28 were cold reads of headers, holding nothing. The 675MB was the on-disk log total, not
 memory. Both numbers were reported before the error was found, and both are corrected here.
 
+## Releasing a session does not release its agent
+
+A session is held by **two independent registries**, and only one of them is reachable from a
+plugin:
+
+| Registry | Holds | Removable? |
+| --- | --- | --- |
+| `ctx.sessions` | the session's event tree | `sessions.remove(id)` — yes |
+| `ctx.agents` | the agent, which holds `agent.session` | **no public path** |
+
+The agent registry's store is a plain `new Map()` (a strong reference). `agents.enter()`
+returns the detach disposer, but `enter()` is called by the agent loop, not by a plugin;
+neither `agents.remove` nor `agent.dispose` appears on the public surface, and the factory's
+`dispose()` tears down **every** agent rather than one.
+
+Measured with a real `SessionStore` and a real `AgentRegistry`:
+
+```
+BEFORE release:  sessions.get(id) -> true    agents.get(id) -> true
+AFTER  release:  sessions.get(id) -> false   agents.get(id) -> true
+                 the agent still carries all events
+```
+
+So the release step frees the session store's reference and nothing else. A plugin cannot free
+the rest without a harness change: `ctx.agents` would need a public per-id removal, or the
+agent loop would need to expose the disposer it already holds.
+
+Two earlier claims are corrected here: the release step was described as freeing memory (it
+frees half), and the residency measurement that motivated it counted cold reads (see above).
+
 ## Reproducing the checks
 
 ```sh

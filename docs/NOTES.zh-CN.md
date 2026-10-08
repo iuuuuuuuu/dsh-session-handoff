@@ -161,6 +161,34 @@ const live = items.filter((s) => s.agentAvailable === true)
 真相是 3 个活着的归档会话；另外 28 个是 header 的冷读，什么都不占。675MB 是磁盘上日志的总量，
 不是内存。这两个数字都在发现错误之前报出去了，这里一并更正。
 
+## 释放会话**不等于**释放它的 agent
+
+一个会话被**两个独立注册表**持有，而插件只够得着其中一个：
+
+| 注册表 | 持有 | 能不能摘 |
+| --- | --- | --- |
+| `ctx.sessions` | 会话的事件树 | `sessions.remove(id)` —— 能 |
+| `ctx.agents` | agent，而 agent 持有 `agent.session` | **没有公开路径** |
+
+agent 注册表的 store 是一个普通 `new Map()`（强引用）。`agents.enter()` 会返回 detach
+disposer，但 `enter()` 是 **agent loop 调的，不是插件**；公开面上既没有 `agents.remove`
+也没有 `agent.dispose`，而工厂的 `dispose()` 会拆掉**所有** agent 而不是一个。
+
+用**真实** `SessionStore` 和**真实** `AgentRegistry` 实测：
+
+```
+释放前：  sessions.get(id) -> true    agents.get(id) -> true
+释放后：  sessions.get(id) -> false   agents.get(id) -> true
+          agent 仍然持有全部事件
+```
+
+所以释放这一步只摘掉了 session store 的引用，别的什么都没释放。**插件不改进 harness 就释放不了
+剩下的**：要么给 `ctx.agents` 加一个按 id 的公开移除，要么让 agent loop 把它本来就持有的
+disposer 暴露出来。
+
+这里更正两个早先的说法：释放曾被描述成「释放内存」（其实只释放一半），以及促成它的那次驻留测量
+数了冷读（见上）。
+
 ## 复现这些检查
 
 ```sh

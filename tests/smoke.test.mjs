@@ -1027,10 +1027,10 @@ test('the reminder names the ceiling it actually bound on', () => {
 
 // ── releasing memory is independent of archiving ───────────────────────────
 
-test('the release step does not depend on the archive step', async () => {
-  // The bug: release was gated on `report.archived`, so in automatic mode (which
-  // defaults to archive:false) the live event tree was NEVER dropped. Archiving is
-  // visibility; releasing is memory. Two independent concerns.
+test('only an archived session is released', async () => {
+  // ONE rule governs memory: a session is released once it is ARCHIVED. A handoff that
+  // keeps the source visible leaves it resident, because the owner may still be looking
+  // at it — and the periodic sweep covers anything archived by the owner's own click.
   const { runHandoff } = await import('../lib/handoff.js')
   const removed = []
   const ctx = {
@@ -1052,11 +1052,17 @@ test('the release step does not depend on the archive step', async () => {
       snapshotEvents: () => [],
     },
   }
-  // archive:false is the automatic default, and it must STILL release.
-  const report = await runHandoff({ ctx, agent, config: {}, archive: false })
-  assert.equal(report.ok, true)
-  assert.equal(report.archived, false, 'the source stays visible')
-  assert.equal(report.released, true, 'but its live event tree is still released')
+  // archive:false is the automatic default: the source stays visible AND stays resident.
+  const visible = await runHandoff({ ctx, agent, config: {}, archive: false })
+  assert.equal(visible.ok, true)
+  assert.equal(visible.archived, false)
+  assert.equal(visible.released, false, 'a visible source must NOT be released')
+  assert.deepEqual(removed, [], 'nothing may be removed while the source stays visible')
+
+  // The default path archives, and only then is the tree dropped.
+  const archived = await runHandoff({ ctx, agent, config: {} })
+  assert.equal(archived.archived, true)
+  assert.equal(archived.released, true)
   assert.deepEqual(removed, ['session-src'])
 })
 
