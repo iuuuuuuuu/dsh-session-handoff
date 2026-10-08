@@ -4,6 +4,8 @@
 
 # dsh-session-handoff
 
+**English** · [简体中文](./README.zh-CN.md)
+
 Carry a conversation's memory into a new session **before** the old one becomes unusable.
 
 ## The problem this solves
@@ -48,14 +50,14 @@ nag on every step.
 `/handoff` runs one transaction:
 
 1. **Read** the live session's messages and events.
-2. **Extract** three layers of memory (below).
+2. **Extract** four layers of memory (below).
 3. **Summarize** the transcript with map-reduce — every request independently bounded.
 4. **Create** a successor session and deliver the seed as its opening turn.
 5. **Archive** the source session, last.
 
 ### The memory it carries
 
-The design question is *what to carry*. Three layers, ordered by cost:
+The design question is *what to carry*. Four layers, ordered by cost:
 
 | Layer | Source | Fidelity | Cost |
 | --- | --- | --- | --- |
@@ -305,6 +307,26 @@ A route entry takes precedence; an unlisted route uses the scalar. The Settings 
 the map as `provider/model = tokens` lines, and the classification names the limit it
 actually used (`effectiveLimit`), so a reading is never ambiguous about its ceiling.
 
+### The model window is read, not configured
+
+The ceiling must follow the model the session is actually using. An adapter declares each
+model's `contextWindow` in its model profile, and the plugin reads it through
+`llm.resolveModelInfo(provider, model)` — the same configuration the request itself is
+built from. Switching models therefore switches the ceiling, with no plugin setting touched:
+
+| Route | Declared window | Pressure | Verdict |
+| --- | --- | --- | --- |
+| `ai/big-model` | 2,000,000 | 150,000 | **ok** (14%) |
+| `ai/small-model` | 200,000 | 150,000 | **critical** (75%) |
+
+The resolution is cached per route and primed in the background, so the observers stay
+synchronous. Until a route's capacity has resolved, the header's own value is used.
+
+Only **one** ceiling stays configured: the **upstream prompt limit**. It is a property of the
+ACCOUNT behind a route rather than of the model, it appears in no model configuration, and
+measurement is the only authority on it. `upstreamPromptLimits` overrides it per
+`provider/model`.
+
 ### The Settings UI
 
 `Settings → 会话交接 / Session handoff` exposes every policy field live. Changes are written
@@ -457,8 +479,9 @@ These are asserted by the test suite (`node --test tests/smoke.test.mjs`):
   stays on disk (archived, still readable) until you delete it.
 - **The summary is a paraphrase.** Exact recall comes from the facts and checkpoints layers
   and from the archived session, which remains openable.
-- **`upstreamPromptLimit` is a guess until you measure it.** The default is the value measured
-  on this machine's route.
+- **`upstreamPromptLimit` is a guess until you measure it.** It is the one ceiling that cannot be
+  read from anywhere, so the default is what this machine's route measured. The model window,
+  by contrast, is read from the model configuration and needs no setting.
 - **Map-reduce costs one request per chunk.** On a very large session that is tens of requests;
   the report tells you how many.
 - **Archiving is not deletion.** It removes the session from the sidebar's default view.
@@ -473,10 +496,23 @@ lib/
   summarize.js     bounded map-reduce summarization
   pressure.js      classification, reminder policy, reminder text
   token-budget.js  token estimation and request budgeting
+  client.js        settings page (browser half)
 tests/
   smoke.test.mjs           unit tests for every module
+  auto-trigger-real.mjs    replays a real failure sequence through the plugin
+  client-render.mjs        renders the settings page with a faithful jsx-runtime stub
   e2e-real-session.mjs     read-only probe that runs the pipeline on a real transcript
+  make-fixture.mjs         rebuilds the local fixture from a real session log
 ```
+
+## Documentation
+
+| File | Language |
+| --- | --- |
+| `README.md` | English |
+| `README.zh-CN.md` | 简体中文 |
+| `DELIVERY.md` | 简体中文 |
+| `DELIVERY.en.md` | English |
 
 ## License
 

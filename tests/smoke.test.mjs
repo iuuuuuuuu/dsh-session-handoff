@@ -952,6 +952,28 @@ test('the reminder is deferred out of the event dispatch', async () => {
   assert.ok(microtaskAt > 0 && microtaskAt < injectAt, 'it must be wrapped in a microtask')
 })
 
+test('the model window is read from the model configuration, not configured', async () => {
+  // The ceiling must follow the model the session is actually using. The plugin asks the
+  // harness (llm.resolveModelInfo) rather than asking the user, so switching models
+  // switches the ceiling with no plugin setting touched.
+  const source = (await import('node:fs')).readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8')
+  assert.ok(source.includes('resolveModelInfo'), 'the capacity must be resolved from the adapter')
+  assert.ok(source.includes('capacityValue'), 'the resolution must be cached per route')
+  assert.ok(source.includes('context.contextWindow'), 'the window comes from the resolved context')
+  // The route is what selects the capacity, so it must be read from the header.
+  assert.ok(source.includes("config.provider + '/' + config.model"), 'the route comes from the live header')
+})
+
+test('two models classify the same pressure differently', () => {
+  // The whole point of reading the window from the model config: the verdict follows the
+  // model. A 150k prompt is comfortable on a 2M window and already critical on a 200k one.
+  const policy = resolvePolicy({})
+  const big = classify({ pressureTokens: 150000, modelWindow: 2000000, policy, route: 'ai/big' })
+  const small = classify({ pressureTokens: 150000, modelWindow: 200000, policy, route: 'ai/small' })
+  assert.equal(big.level, 'ok')
+  assert.equal(small.level, 'critical')
+})
+
 // ── the browser half ────────────────────────────────────────────────────────
 
 /** Load the real client bundle through a faithful ModuleLoader + jsx-runtime stub. */

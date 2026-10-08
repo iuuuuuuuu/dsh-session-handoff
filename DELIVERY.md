@@ -1,5 +1,7 @@
 # 交付说明 · dsh-session-handoff 0.1.0
 
+**简体中文** · [English](./DELIVERY.en.md)
+
 ## 一句话
 
 DSH 插件：在会话大到**自身压缩永久失效**之前，把它的记忆交接给一个新会话，并归档老会话。
@@ -21,23 +23,27 @@ DSH 插件：在会话大到**自身压缩永久失效**之前，把它的记忆
 | 路径 | 说明 |
 | --- | --- |
 | `D:\WishProject\dsh-session-handoff\` | 插件项目（独立文件夹） |
-| `lib/index.js` | 插件入口：`/handoff` 命令 + 压力监控 |
-| `lib/handoff.js` | 事务编排：读 → 记忆 → 总结 → 建会话 → 归档 |
+| `lib/index.js` | 插件入口：`/handoff`、`/handoff-status`、压力监控、三个触发器 |
+| `lib/client.js` | 设置界面（浏览器半），用 app 的设计 token 构建 |
+| `lib/handoff.js` | 事务编排：读 → 记忆 → 总结 → 建会话 → 投递 → 归档 → 释放 |
 | `lib/memory.js` | 四层记忆抽取、凭据脱敏与 seed 组装 |
 | `lib/summarize.js` | 分块 map-reduce 总结（请求逐个受预算约束） |
 | `lib/pressure.js` | 压力分级、提醒策略、提醒文案 |
 | `lib/token-budget.js` | token 估算与请求预算 |
-| `tests/smoke.test.mjs` | 27 条单测 + 管线端到端 |
+| `tests/smoke.test.mjs` | **67 条**测试，覆盖每个模块 |
+| `tests/auto-trigger-real.mjs` | 用真实失败序列重放自动触发器 |
+| `tests/client-render.mjs` | 用忠实的 jsx-runtime stub 渲染设置界面 |
 | `tests/e2e-real-session.mjs` | 只读探针：在真实转录上跑管线 |
-| `README.md` | 安装、配置、保证、以及**它做不到什么** |
+| `tests/make-fixture.mjs` | 从真实会话日志重建本地 fixture |
+| `README.md` / `README.zh-CN.md` | 完整文档，双语 |
 
 ## 已实测（证据）
 
 ### 单元与管线
 
 ```
-# tests 35
-# pass 35
+# tests 67
+# pass 67
 # fail 0
 ```
 
@@ -58,7 +64,7 @@ verbatim recent turns kept:   35 of 32,286 (trimmed)                  ← 精确
 seed from the exact layers:  49,052 chars (~15,391 tokens)            ← 一条模型请求都没发
 ```
 
-**光靠事实层 + 检查点层就产出了 3,327 token 的可用 seed。**
+**光靠事实层 + 检查点层就产出了 3,327 token 的可用 seed；四层齐上时是 15,391 token。**
 
 ### 脱敏的正/负对照（真实转录）
 
@@ -84,6 +90,55 @@ seed from the exact layers:  49,052 chars (~15,391 tokens)            ← 一条
 改完后抽到的是 `wt-port\crates\ai-gateway-router`、`build-1034-sse.log`、
 `inst-1034-sse\state.json` 这类真正有用的东西。
 
+### 自动触发器，在真实数据上
+
+把一个已死的 106MB 会话里真实的 1,316 个结果序列喂进**已挂载的插件**重放：
+
+| 会话体量 | 触发点 | 正确吗 |
+| --- | --- | --- |
+| 窗口的 10% | 第 #1336 次失败，一个终局 `model_param_invalid` | 对 —— 终局码绕过体量下限 |
+| 窗口的 90% | 第 #43 次失败，第三次连续拒绝 | 对 —— 连续 + 体量 |
+| 中间插一次成功 | 永不触发 | 对 —— 成功重置计数 |
+
+### 隔离宿主里的端到端
+
+在**独立的 DSH home**（端口 3099）里跑，你自己的宿主一点没碰：
+
+```
+1. 插件激活无报错                        是
+2. 设置命名空间上线                      是（16 个可编辑字段）
+3. 通过真实设置 API 写入配置              是（autoHandoff.atLevel -> watch）
+4. 连续两个真实失败的 turn                是
+5. 异常触发器自己动了                    是（anomaly:error x2）
+6. 新会话已创建并投递 seed                是（8,701 字符：真实事实 + 逐字尾部）
+7. 源会话未被归档（自动模式）             是
+```
+
+### 只有真实宿主才能发现的四个 bug
+
+单测全绿时插件在**四个**方面是坏的，每一个都是真机跑出来的：
+
+1. **volatile 分组套 volatile 叶子** → fiber 校验失败 → 设置页读「此部署没有开放本插件的配置」，
+   而命令照常工作。
+2. **`turn/end` / `compaction/end` 是会话落盘事件，不是实时事件** → 监听它们能编译、能跑、
+   永不触发。真正的钩子是 `session/event`。
+3. **turn 边界是在 driver 还在跑时观察到的** → 要求「立即空闲」挡住了每一个触发器。
+4. **交接成功后又反复触发** → 一个会话里触发 1,313 次。已加抑制 + 重试上限。
+
+### 为什么三个健康会话被分叉了
+
+早期版本交接了三个**健康、仍在工作**的会话。原因在测量：
+
+| 会话 | GUI 报的数 | 插件当时的估算 |
+| --- | --- | --- |
+| `2f11ef00` | 76,040 token | ~800,000 |
+| `e7d70ba3` | 71,120 token | ~900,000 |
+| `d46b3a4d` | 406,013 token | ~1,200,000 |
+
+插件读的是 `tokenMeter.measure().totalTokens`，它**给整个 surface 定价**，包括已被压缩遮蔽的
+历史。已改读 harness 的 `contextPressure` 投影（**provider 上报**的占用），并且**估算值不允许
+触发任何自动动作**。
+
 ## 凭据脱敏（必读）
 
 逐字层是**拷贝**，所以会话里曾经回显过的东西（调试时打印的 token、dotenv dump 里的 key）
@@ -96,7 +151,8 @@ bearer token、`sk-` / `ghp_` / `github_pat_` / `xox` / `AKIA` 密钥、JWT、PE
 - 已 `link:` 安装进 **tauri** profile：`D:\DSHHome\profiles\tauri\package.json`
   → `"dsh-session-handoff": "link:D:/WishProject/dsh-session-handoff/"`
 - 已注册进 `dsh.profile.bundles`
-- 已用宿主 RPC 确认命令已注册：`POST /api/commands/list` 返回的 15 个命令里包含 `handoff`
+- 已用宿主 RPC 确认命令已注册：`POST /api/commands/list` 返回的命令里包含 `handoff` 和 `handoff-status`
+- 已发布到 GitHub（公开）：<https://github.com/iuuuuuuuu/dsh-session-handoff>，带 `dsh-plugin` topic
 
 ## ⚠ 需要重启 DSH 才生效
 
@@ -143,13 +199,18 @@ bearer token、`sk-` / `ghp_` / `github_pat_` / `xox` / `AKIA` 密钥、JWT、PE
 - **它不缩小 live 会话。** 交接是把工作搬到新会话；老会话仍在磁盘上（已归档、可读），
   直到你删除它。
 - **摘要层是复述。** 精确性来自事实层、检查点层，以及仍可打开的归档会话。
-- **`upstreamPromptLimit` 在你实测之前只是猜测。** 默认值是本机路由上测出来的。
+- **`upstreamPromptLimit` 在你实测之前只是猜测。** 它是唯一一条无处可读的上限（模型窗口已改为
+  从会话的模型配置里读）。默认值是本机路由上测出来的。
 - **map-reduce 每块一次请求。** 超大会话是几十次请求；报告里会写明次数。
 - **归档不等于删除。** 只是从侧栏默认视图里移出。
+- **自动触发器还没在真实自然发生的故障上触发过。** 逻辑已用真实序列和隔离宿主（故意弄坏路由）
+  验证，但「你自己的会话坏了、插件自己动起来」那一刻仍未观测到。
 
 ## 验证命令
 
 ```sh
-node --test tests/smoke.test.mjs                       # 27 条
+node --test tests/smoke.test.mjs                        # 67 条
+node tests/auto-trigger-real.mjs                        # 重放真实失败序列
+node tests/client-render.mjs                            # 渲染设置界面
 node tests/e2e-real-session.mjs <session.v4.jsonl.zstd> # 只读真实转录探针
 ```
