@@ -171,9 +171,6 @@ Mount config in your profile patch, or edit it live in **Settings → 会话交�
       enabled: true
     policy:
       language: zh                        # language of the reminder in the transcript
-      upstreamPromptLimit: 1048576       # fallback for routes with no entry
-      upstreamPromptLimits:              # per-route measured ceilings
-        ai/deepseek-v4.1-flash: 1048576
       watchRatio: 0.45
       warnRatio: 0.6
       criticalRatio: 0.75
@@ -188,10 +185,11 @@ Mount config in your profile patch, or edit it live in **Settings → 会话交�
       archive: false
 ```
 
-The **model window is not configured** — the plugin reads it from the model configuration the
-session is actually using, so it follows a model switch with no setting touched. Only the
-**upstream prompt limit** stays configured: it is a property of the account behind a route, it
-appears in no model configuration, and measurement is the only authority on it.
+**Neither ceiling is configured.** The model window is read from the model configuration the
+session is actually using, so it follows a model switch with no setting touched. The upstream
+request limit is a property of the account behind a route and appears in no model
+configuration, so the plugin carries the value measured on this machine as its default; it is
+available as `policy.upstreamPromptLimit` for a deployment that measures a different one.
 
 ## Guarantees
 
@@ -214,8 +212,8 @@ Asserted by the test suite (`node --test tests/smoke.test.mjs`):
   stays on disk (archived, still readable) until you delete it.
 - **The summary is a paraphrase.** Exact recall comes from the facts and checkpoints layers and
   from the archived session, which remains openable.
-- **`upstreamPromptLimit` is a guess until you measure it.** It is the one ceiling that cannot
-  be read from anywhere, so the default is what this machine's route measured.
+- **The upstream request limit is a measured default, not a discovery.** It is the one ceiling
+  that cannot be read from anywhere, so the value is what this machine's route measured.
 - **Map-reduce costs one request per chunk.** On a very large session that is tens of requests;
   the report tells you how many.
 - **Archiving is not deletion.** It removes the session from the sidebar's default view.

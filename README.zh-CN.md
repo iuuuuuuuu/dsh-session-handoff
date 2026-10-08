@@ -139,9 +139,6 @@ The source session is archived; it stays readable in the sidebar.
       enabled: true
     policy:
       language: zh                        # 对话里那条提醒用什么语言
-      upstreamPromptLimit: 1048576       # 没有单独条目的路由用这个兜底
-      upstreamPromptLimits:              # 按路由的实测上限
-        ai/deepseek-v4.1-flash: 1048576
       watchRatio: 0.45
       warnRatio: 0.6
       criticalRatio: 0.75
@@ -158,7 +155,7 @@ The source session is archived; it stays readable in the sidebar.
 
 > 配置里的键名（`upstreamPromptLimit` 等）是程序读的标识符，保持英文。
 
-**模型窗口不需要配置** —— 插件从会话**正在使用**的模型配置里读它，所以换模型就换上限，不用动任何设置。只有**上游请求长度上限**需要配置：它是路由背后**账号**的属性，不出现在任何模型配置里，唯一权威是实测。
+**两条上限都不需要配置。** 模型窗口从会话**正在使用**的模型配置里读，所以换模型就换上限，不用动任何设置。上游请求长度上限是路由背后**账号**的属性、不出现在任何模型配置里，所以插件带一个**本机实测出来的默认值**；换账号的部署可以改 `policy.upstreamPromptLimit`。
 
 ## 保证
 
@@ -175,7 +172,7 @@ The source session is archived; it stays readable in the sidebar.
 
 - **它不缩小活会话。** 交接把工作移到新会话；旧的留在磁盘上（已归档、仍可阅读），直到你删掉它。
 - **摘要是复述。** 精确回忆来自事实层、检查点层，以及那个仍可打开的归档会话。
-- **`upstreamPromptLimit`（上游请求长度上限）在你实测之前只是猜测。** 它是唯一一条无处可读的上限，所以默认值是本机路由上实测出来的。
+- **上游请求长度上限是实测默认值，不是探测出来的。** 它是唯一一条无处可读的上限，所以这个值是本机路由上实测出来的。
 - **分块总结每块花一次请求。** 超大会话上是几十次；报告会告诉你几次。
 - **归档不是删除。** 它把会话从侧栏默认视图里移走。
 - **自动触发器还没在自然发生的故障上触发过。** 逻辑已用真实数据和隔离宿主验证，但那一刻仍未观测到。

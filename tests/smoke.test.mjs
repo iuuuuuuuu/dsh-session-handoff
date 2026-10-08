@@ -1025,6 +1025,53 @@ test('the reminder names the ceiling it actually bound on', () => {
   assert.ok(text.includes('上游请求长度上限'), 'the binding ceiling is named in Chinese')
 })
 
+// ── releasing memory is independent of archiving ───────────────────────────
+
+test('the release step does not depend on the archive step', async () => {
+  // The bug: release was gated on `report.archived`, so in automatic mode (which
+  // defaults to archive:false) the live event tree was NEVER dropped. Archiving is
+  // visibility; releasing is memory. Two independent concerns.
+  const { runHandoff } = await import('../lib/handoff.js')
+  const removed = []
+  const ctx = {
+    llm: { stream: async function* () { yield { type: 'block-start', index: 0, blockType: 'text' }; yield { type: 'text-delta', index: 0, text: 'S' }; yield { type: 'block-end', index: 0, block: { type: 'text', text: 'S' } }; yield { type: 'finish', reason: { kind: 'stop' } } } },
+    agents: { create: async () => ({}), get: () => undefined },
+    get: (name) => {
+      if (name === 'workspaceRegistry') return { archiveSession: async () => {}, resolveByPath: async () => undefined }
+      if (name === 'sessionController') return { prompt: async (r, s) => { s.throwIfAborted() } }
+      if (name === 'sessions') return { remove: (id) => { removed.push(id); return true } }
+      return undefined
+    },
+  }
+  const agent = {
+    options: { provider: 'ai', model: 'm' },
+    session: {
+      id: 'session-src', header: { cwd: 'D:\\p' },
+      requestHeader: () => ({ config: { provider: 'ai', model: 'm', contextWindow: 1000000 } }),
+      deriveMessages: () => [{ role: 'user', content: [{ type: 'text', text: 'x' }] }],
+      snapshotEvents: () => [],
+    },
+  }
+  // archive:false is the automatic default, and it must STILL release.
+  const report = await runHandoff({ ctx, agent, config: {}, archive: false })
+  assert.equal(report.ok, true)
+  assert.equal(report.archived, false, 'the source stays visible')
+  assert.equal(report.released, true, 'but its live event tree is still released')
+  assert.deepEqual(removed, ['session-src'])
+})
+
+test('the archive sweep releases sessions archived outside this plugin', async () => {
+  // A manual archive from the GUI emits no event the plugin can listen for, so the
+  // only way to notice one is to look. The sweep reads the archive set.
+  const source = (await import('node:fs')).readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8')
+  assert.ok(source.includes('releaseArchivedSessions'), 'the sweep must exist')
+  assert.ok(source.includes('archivedSessionIds'), 'it reads the registry archive set')
+  assert.ok(source.includes('setInterval(releaseArchivedSessions'), 'it runs periodically')
+  // The running-session guard lives in the release helper itself.
+  const helper = (await import('node:fs')).readFileSync(new URL('../lib/handoff.js', import.meta.url), 'utf8')
+  assert.ok(helper.includes('the session was still running'), 'a running session must be skipped')
+})
+
 // ── the browser half ────────────────────────────────────────────────────────
 
 /** Load the real client bundle through a faithful ModuleLoader + jsx-runtime stub. */
@@ -1157,14 +1204,17 @@ test('the settings section renders its controls, not an empty shell', async () =
     names.push(node.name)
     if (typeof node.props?.children === 'string') texts.push(node.props.children)
   })
-  for (const key of ['monitorTitle', 'autoTitle', 'compactionTitle', 'seedTitle', 'upstreamTitle']) {
+  for (const key of ['monitorTitle', 'autoTitle', 'compactionTitle', 'seedTitle']) {
     assert.ok(texts.includes(key), key + ' must render')
   }
+  assert.ok(!texts.includes('upstreamTitle'), 'the upstream group must be gone from the form')
   // The form must be built from the shipped control vocabulary, not raw divs.
   assert.ok(names.filter((n) => n === 'ToggleField').length >= 4, 'the switches must render')
   assert.ok(names.filter((n) => n === 'NumberField').length >= 9, 'the numeric fields must render')
   assert.equal(names.filter((n) => n === 'SelectField').length, 2, 'the level and language selects must render')
-  assert.equal(names.filter((n) => n === 'MapField').length, 1, 'the per-model map must render')
+  // The upstream-limit group was removed from the form: the model window is read from
+  // the model configuration, and the upstream default is not something a user tunes.
+  assert.equal(names.filter((n) => n === 'MapField').length, 0, 'the map editor must be gone')
 })
 
 test('the dropdown offers every level with a localized label', async () => {
