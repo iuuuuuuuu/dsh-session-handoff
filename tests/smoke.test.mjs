@@ -492,7 +492,8 @@ test('reminderText names the binding ceiling and the way out', () => {
   const policy = resolvePolicy({})
   const critical = classify({ pressureTokens: 900000, modelWindow: 1000000, policy })
   const text = reminderText({ classification: critical, pressureTokens: 900000, modelWindow: 1000000, policy })
-  assert.ok(text.includes('upstream-prompt-limit') || text.includes('model-window'))
+  // The binding ceiling is named in the owner's language, not as a wire id.
+  assert.ok(text.includes('模型窗口') || text.includes('上游请求长度上限'), 'the binding ceiling must be named')
   assert.ok(text.includes('/handoff'), 'the reminder must tell the user what to run')
   assert.ok(text.includes('900,000'), 'the reminder must show the measured number')
 })
@@ -974,6 +975,56 @@ test('two models classify the same pressure differently', () => {
   assert.equal(small.level, 'critical')
 })
 
+// ── the reminder speaks the owner's language ────────────────────────────────
+
+test('the reminder defaults to Chinese and can be switched to English', () => {
+  // The host half cannot read the browser locale (the `locale` namespace is empty),
+  // so the language is a setting. A reminder the owner cannot read is not a reminder.
+  const policy = resolvePolicy({})
+  assert.equal(policy.language, 'zh', 'Chinese is the default')
+  assert.equal(resolvePolicy({ language: 'en' }).language, 'en')
+  // An empty or non-string value falls back rather than producing a broken reminder.
+  assert.equal(resolvePolicy({ language: '' }).language, 'zh')
+  assert.equal(resolvePolicy({ language: 42 }).language, 'zh')
+})
+
+test('the Chinese reminder is fully Chinese', () => {
+  const policy = resolvePolicy({})
+  const classification = classify({ pressureTokens: 538714, modelWindow: 1000000, policy, route: 'ai/x' })
+  const text = reminderText({ classification, pressureTokens: 538714, modelWindow: 1000000, policy, language: 'zh' })
+  // The measurement lines must read as Chinese prose.
+  assert.ok(text.includes('实测压力'), 'the pressure line is Chinese')
+  assert.ok(text.includes('模型窗口'), 'the window line is Chinese')
+  assert.ok(text.includes('上游请求长度上限'), 'the upstream line is Chinese')
+  // No English jargon may survive in the Chinese text.
+  for (const jargon of ['turn', 'seed', 'prompt', 'token', 'profile', 'provider', 'binding ceiling']) {
+    assert.ok(!text.includes(jargon), 'Chinese text must not contain "' + jargon + '"')
+  }
+  // The command name is an identifier, not prose, so it stays.
+  assert.ok(text.includes('/handoff'))
+})
+
+test('the English reminder is fully English', () => {
+  const policy = resolvePolicy({})
+  const classification = classify({ pressureTokens: 538714, modelWindow: 1000000, policy, route: 'ai/x' })
+  const text = reminderText({ classification, pressureTokens: 538714, modelWindow: 1000000, policy, language: 'en' })
+  assert.ok(text.includes('measured pressure'))
+  assert.ok(text.includes('model window'))
+  assert.ok(text.includes('upstream request limit'))
+  // No full-width punctuation may leak into the English text.
+  assert.ok(!/[，（）]/.test(text), 'English text must not contain CJK punctuation')
+})
+
+test('the reminder names the ceiling it actually bound on', () => {
+  const policy = resolvePolicy({})
+  // A tiny upstream limit binds before the window does.
+  const tight = resolvePolicy({ upstreamPromptLimit: 100000 })
+  const classification = classify({ pressureTokens: 90000, modelWindow: 1000000, policy: tight, route: 'ai/x' })
+  assert.equal(classification.binding, 'upstream-prompt-limit')
+  const text = reminderText({ classification, pressureTokens: 90000, modelWindow: 1000000, policy: tight, language: 'zh' })
+  assert.ok(text.includes('上游请求长度上限'), 'the binding ceiling is named in Chinese')
+})
+
 // ── the browser half ────────────────────────────────────────────────────────
 
 /** Load the real client bundle through a faithful ModuleLoader + jsx-runtime stub. */
@@ -1112,7 +1163,7 @@ test('the settings section renders its controls, not an empty shell', async () =
   // The form must be built from the shipped control vocabulary, not raw divs.
   assert.ok(names.filter((n) => n === 'ToggleField').length >= 4, 'the switches must render')
   assert.ok(names.filter((n) => n === 'NumberField').length >= 9, 'the numeric fields must render')
-  assert.equal(names.filter((n) => n === 'SelectField').length, 1, 'the level select must render')
+  assert.equal(names.filter((n) => n === 'SelectField').length, 2, 'the level and language selects must render')
   assert.equal(names.filter((n) => n === 'MapField').length, 1, 'the per-model map must render')
 })
 

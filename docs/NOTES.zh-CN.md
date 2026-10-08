@@ -1,5 +1,7 @@
 # 工程笔记
 
+> 文中的 `turn/end`、`contextPressure` 这类**标识符**是 harness 里的真实名字，保持英文；其余散文都是中文。
+
 这个插件是怎么被验证的，以及路上踩过什么坑。这些笔记是 [README](../README.zh-CN.md) 里那些
 结论背后的证据；刻意分开放，好让 README 保持成一份面向用户的文档。
 
@@ -52,7 +54,7 @@ seed from the exact layers:   49,052 chars (~15,391 tokens)  ← 一条模型请
 1. 插件激活无报错                        是
 2. 设置命名空间上线                      是（16 个可编辑字段）
 3. 通过真实设置 API 写入配置              是（autoHandoff.atLevel -> watch）
-4. 连续两个真实失败的 turn                是
+4. 连续两轮真实失败                       是
 5. 异常触发器自己动了                    是（anomaly:error x2）
 6. 新会话已创建并投递 seed                是（8,701 字符：真实事实 + 逐字尾部）
 7. 源会话未被归档（自动模式）             是
@@ -80,15 +82,15 @@ fiber 校验失败，而设置层**只暴露 fiber 状态为 active 的命名空
 这些持久化事件名长得像事件总线事件，所以监听它们**能编译、能跑、永远不触发**。真正的钩子是
 `session/event`，它把每一次追加以 `(session, event)` 带出来。
 
-**3. turn 边界是在 driver 还在跑的时候观察到的。**
+**3. 轮次边界是在 driver 还在跑的时候观察到的。**
 
-追加发生在 driver 自己的 `finally` 里，所以那一刻 agent 还是 `running`。要求「立即空闲」
+落盘发生在 driver 自己的 `finally` 里，所以那一刻 agent 还是 `running`。要求「立即空闲」
 **挡住了每一个触发器** —— 插件正确计数，然后什么都不做。修复是等 driver 收敛，上限 10 秒。
 
 **4. 一个会话被反复交接。**
 
-交接成功之后，下一个失败 turn **又**触发，反复 —— 一个会话历史里触发了 **1,313 次**。坏掉的
-会话会**每个 turn 生一个后继**，比原来的故障还糟。现在成功的交接会抑制该会话，失败的交接三次
+交接成功之后，下一轮失败**又**触发，反复 —— 一个会话历史里触发了 **1,313 次**。坏掉的
+会话会**每一轮生一个后继**，比原来的故障还糟。现在成功的交接会抑制该会话，失败的交接三次
 之后停手。
 
 ## 为什么三个健康会话被分叉了
@@ -101,10 +103,10 @@ fiber 校验失败，而设置层**只暴露 fiber 状态为 active 的命名空
 | `e7d70ba3` | 71,120 token | ~900,000 |
 | `d46b3a4d` | 406,013 token | ~1,200,000 |
 
-插件读的是 `ctx.tokenMeter.measure(session).totalTokens`，它**给整个 surface 定价** ——
+插件读的是 `ctx.tokenMeter.measure(session).totalTokens`，它**给整个可见面定价** ——
 包括**已经被压缩遮蔽掉的历史**。在压缩过几次的会话上，这个估算远远跑在真实 prompt 前面。
 
-修复是改读 harness 自己的 `contextPressure` 投影，它发布的是 **provider 上报**的占用 ——
+修复是改读 harness 自己的 `contextPressure` 投影，它发布的是**服务商上报**的占用 ——
 真正决定下一个请求装不装得下的那个数。而且**估算值不允许触发任何东西**：三个触发点全部把关，
 兜底读数被标记 `estimated: true`。估算仍然够格**提醒**你；它不够格把你的会话拿走。
 
@@ -152,4 +154,4 @@ node tests/client-render.mjs            # 渲染设置界面
 node tests/e2e-real-session.mjs <log>   # 只读真实转录探针
 ```
 
-那份 6.4MB 的会话 fixture **没有提交** —— 它是私密对话内容。用 `tests/make-fixture.mjs` 在本地重建。
+那份 6.4MB 的会话样本 **没有提交** —— 它是私密对话内容。用 `tests/make-fixture.mjs` 在本地重建。

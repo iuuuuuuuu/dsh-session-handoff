@@ -170,6 +170,7 @@ Mount config in your profile patch, or edit it live in **Settings → 会话交�
     monitor:
       enabled: true
     policy:
+      language: zh                        # language of the reminder in the transcript
       upstreamPromptLimit: 1048576       # fallback for routes with no entry
       upstreamPromptLimits:              # per-route measured ceilings
         ai/deepseek-v4.1-flash: 1048576
@@ -220,6 +221,8 @@ Asserted by the test suite (`node --test tests/smoke.test.mjs`):
 - **Archiving is not deletion.** It removes the session from the sidebar's default view.
 - **The automatic triggers have not fired on a naturally occurring failure yet.** The logic is
   verified against real data and in an isolated host, but that moment is still unobserved.
+- **The reminder's language is a setting, not the browser locale.** The host half cannot read the
+  browser's language, so `policy.language` decides it and defaults to `zh`.
 
 ## Layout
 
