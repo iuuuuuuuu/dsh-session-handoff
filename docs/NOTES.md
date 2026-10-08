@@ -160,6 +160,25 @@ The first version produced junk on a real transcript. Three defects, each fixed 
    `target/debug/build/<crate>-<hash>/out/*` entries and crowded out the source paths. They are
    now collapsed by shape, and source paths outrank build artifacts.
 
+## Measuring what is live is not measuring what is listed
+
+`session/list` returns **live and cold sessions in one array**: it reads the store, and for
+anything not in the store it falls back to a cold read of the header from disk. Counting that
+array therefore over-reports residency by a wide margin — on this machine it reported 230
+sessions when **8** were actually live.
+
+The field that distinguishes them is `agentAvailable`. A measurement of memory residency must
+filter on it:
+
+```js
+const live = items.filter((s) => s.agentAvailable === true)
+```
+
+This matters because the first reading of the release fix claimed "31 archived sessions still
+resident, holding 675MB" — which was wrong. The truth was 3 live archived sessions; the other
+28 were cold reads of headers, holding nothing. The 675MB was the on-disk log total, not
+memory. Both numbers were reported before the error was found, and both are corrected here.
+
 ## Reproducing the checks
 
 ```sh
