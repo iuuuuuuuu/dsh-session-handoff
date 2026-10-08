@@ -1,0 +1,13 @@
+# dsh-session-handoff bundle patch
+#
+# 安装：
+#   dsh plugin --profile <name> add <path-or-git>
+#
+# 若 profile 的 cordis.patch.yml 已有本插件的手工挂载行，请删除以免双实例。
+#
+# The row id `session-handoff` is also the settings namespace: the browser half
+# addresses this plugin's configuration by the Loader entry id, and the settings
+# document only exposes a section for an entry the profile actually mounts.
+- insert:
+    - id: session-handoff
+      name: 'dsh-session-handoff'

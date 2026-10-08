@@ -1,0 +1,12 @@
+node_modules/
+*.log
+
+# Local scratch
+_*.txt
+.probe-*
+.tmp-*
+
+# The real-session fixture is derived from a private session log: 6.4MB of conversation
+# content. Regenerate it locally with:
+#   node tests/make-fixture.mjs "<path to a session.v4.jsonl.zstd>"
+tests/fixtures/trimmed-poisoned-session.v4.jsonl.zstd

@@ -1,0 +1,57 @@
+{
+  "name": "dsh-session-handoff",
+  "version": "0.1.0",
+  "description": "DSH 会话交接：上下文压力智能提醒 + 记忆保全式接力（总结 → 新会话继承 → 归档老会话），并能在会话已超上游 token 上限、原生压缩永久失败时把它救回来。",
+  "keywords": [
+    "deepseek-harness",
+    "deepseek-harness-plugin",
+    "dsh-plugin",
+    "context-window",
+    "compaction",
+    "session-handoff",
+    "context-overflow",
+    "11133"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json",
+    "./client": {
+      "default": "./lib/client.js"
+    }
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "DELIVERY.md"
+  ],
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "scripts": {
+    "test": "node --test tests/smoke.test.mjs",
+    "test:e2e": "node tests/e2e-real-session.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iuuuuuuuu/dsh-session-handoff.git"
+  },
+  "homepage": "https://github.com/iuuuuuuuu/dsh-session-handoff#readme",
+  "bugs": {
+    "url": "https://github.com/iuuuuuuuu/dsh-session-handoff/issues"
+  },
+  "author": "iuuuuuuuu"
+}
